@@ -1,6 +1,6 @@
 """
-author: Zhou Chen
-datetime: 2019/6/20 15:44
+author: Yudong Han
+datetime: 2021/06/02
 desc: 利用摄像头实时检测
 """
 import os
@@ -10,6 +10,13 @@ import cv2
 import numpy as np
 from model import CNN2, CNN3
 from utils import index2emotion, cv2_img_add_text
+import threading
+import matplotlib.pyplot as plt
+
+
+WEIGHTS = np.array([-1,-2,0,1,-1,2,0,-2])
+POINTS = 50
+result_list = [0] * POINTS
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--source", type=int, default=0, help="data source, 0 for camera 1 for video")
@@ -54,50 +61,83 @@ def generate_faces(face_img, img_size=48):
     resized_images = np.array(resized_images)
     return resized_images
 
+def dis(WH, xywh) -> float:
+    return np.linalg.norm(
+        np.array((WH[1]/2,WH[0]/2)) - np.array((xywh[1]+xywh[3]/2, xywh[0] + xywh[2]/2))
+    )
+
+
+def get_attention_score(capture, model):
+    # threading.Timer(1, get_attention_score, [capture, model]).start()
+    _, frame = capture.read()  # 读取一帧视频，返回是否到达视频结尾的布尔值和这一帧的图像
+    # plt.imshow(frame)
+    # frame = cv2.resize(frame, (800, 600))
+    frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # 灰度化
+    cascade = cv2.CascadeClassifier('./dataset/params/haarcascade_frontalface_alt.xml')  # 检测人脸
+    # 利用分类器识别出哪个区域为人脸
+    faces = cascade.detectMultiScale(frame_gray, scaleFactor=1.1, minNeighbors=1, minSize=(120, 120))
+    global result_list
+    # 如果检测到人脸
+    if len(faces) > 0:
+        # for (x, y, w, h) in faces:
+        # TODO: 选择靠近中间的脸
+        x, y, w, h = faces[0]
+        distance = dis(frame.shape, faces[0])
+        for xywh in faces:
+            curdis = dis(frame.shape, xywh)
+            if curdis < distance:
+                x, y, w, h = xywh
+        face = frame_gray[y: y + h, x: x + w]  # 脸部图片
+        faces = generate_faces(face)
+        results = model.predict(faces)
+        result_sum = np.sum(results, axis=0).reshape(-1)
+        result_sum = result_sum / np.sum(result_sum)
+        attention = np.dot(result_sum, WEIGHTS)
+    else:
+        attention = 0
+
+    result_list = result_list[1:] + [attention]
+    
+
+def show_plot(ax, line):
+    global result_list
+    line.set_ydata(result_list)
+    ax.draw_artist(line)
+    ax.figure.canvas.draw()
+def show_cam(capture, ax, cam):
+    _, frame = capture.read()  # 读取一帧视频，返回是否到达视频结尾的布尔值和这一帧的图像
+    cam.set_data(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    ax.draw_artist(cam)
+    ax.figure.canvas.draw()
+
 
 def predict_expression():
-    """
-    实时预测
-    :return:
-    """
+    print('predict_expression')
     # 参数设置
     model = load_model()
 
     border_color = (0, 0, 0)  # 黑框框
-    font_color = (255, 255, 255)  # 白字字
+    font_color = (255, 255, 0)  # 白字字
     capture = cv2.VideoCapture(0)  # 指定0号摄像头
     if filename:
         capture = cv2.VideoCapture(filename)
 
-    while True:
-        _, frame = capture.read()  # 读取一帧视频，返回是否到达视频结尾的布尔值和这一帧的图像
-        frame = cv2.cvtColor(cv2.resize(frame, (800, 600)), cv2.COLOR_BGR2RGB)
-        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # 灰度化
-        cascade = cv2.CascadeClassifier('./dataset/params/haarcascade_frontalface_alt.xml')  # 检测人脸
-        # 利用分类器识别出哪个区域为人脸
-        faces = cascade.detectMultiScale(frame_gray, scaleFactor=1.1, minNeighbors=1, minSize=(120, 120))
-        # 如果检测到人脸
-        if len(faces) > 0:
-            for (x, y, w, h) in faces:
-                face = frame_gray[y: y + h, x: x + w]  # 脸部图片
-                faces = generate_faces(face)
-                results = model.predict(faces)
-                result_sum = np.sum(results, axis=0).reshape(-1)
-                label_index = np.argmax(result_sum, axis=0)
-                emotion = index2emotion(label_index)
-                cv2.rectangle(frame, (x - 10, y - 10), (x + w + 10, y + h + 10), border_color, thickness=2)
-                frame = cv2_img_add_text(frame, emotion, x+30, y+30, font_color, 20)
-                # puttext中文显示问题
-                # cv2.putText(frame, emotion, (x + 30, y + 30), cv2.FONT_HERSHEY_SIMPLEX, 1, font_color, 4)
-        cv2.imshow("expression recognition(press esc to exit)", frame)  # 利用人眼假象
+    fig, (cam_ax, line_ax) = plt.subplots(1, 2)
 
-        key = cv2.waitKey(30)  # 等待30ms，返回ASCII码
-
-        # 如果输入esc则退出循环
-        if key == 27:
-            break
-    capture.release()  # 释放摄像头
-    cv2.destroyAllWindows()  # 销毁窗口
+    line_ax.set_ylim([-3.5, 3.5])
+    line_ax.set_xlim([0, POINTS])
+    line, = line_ax.plot(range(POINTS), result_list, label='output', color='cornflowerblue')
+    _, frame = capture.read()  # 读取一帧视频，返回是否到达视频结尾的布尔值和这一帧的图像
+    cam = cam_ax.imshow(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    timer = fig.canvas.new_timer(interval=500)
+    timer.add_callback(get_attention_score, capture, model)
+    timer.add_callback(show_plot, line_ax, line)
+    timer.start()
+    timer2 = fig.canvas.new_timer(interval=20)
+    timer2.add_callback(show_cam, capture, cam_ax, cam)
+    timer2.start()
+    # get_attention_score(capture, model, ax)
+    plt.show()
 
 
 if __name__ == '__main__':

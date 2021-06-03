@@ -8,3 +8,6 @@ __pycache__/
 *.zip
 *.rar
 *.h5
+.vscode
+.DS_Store
+dataset/data

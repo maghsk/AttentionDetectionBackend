@@ -4,7 +4,6 @@ datetime: 2021/06/02
 desc: 利用摄像头实时检测
 """
 import os
-import argparse
 
 from tensorflow.python.training.tracking.util import capture_dependencies
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
@@ -17,19 +16,9 @@ import random
 import json
 app = Flask(__name__)
 
-WEIGHTS = np.array([-1,-2,0,1,-1,2,0,-2])
+WEIGHTS = np.array([-1,-2,0,1,-1,2,0.05,-2])
 POINTS = 50
 result_list = [0] * POINTS
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--source", type=int, default=0, help="data source, 0 for camera 1 for video")
-parser.add_argument("--video_path", type=str, default=None)
-opt = parser.parse_args()
-
-if opt.source == 1 and opt.video_path is not None:
-    filename = opt.video_path
-else:
-    filename = None
 
 @app.route('/')
 def hello_world():
@@ -79,18 +68,10 @@ def dis(WH, xywh) -> float:
 
 def get_xywh(frame_gray):
     cascade = cv2.CascadeClassifier('./dataset/params/haarcascade_frontalface_alt.xml')  # 检测人脸
-    faces = cascade.detectMultiScale(frame_gray, scaleFactor=1.1, minNeighbors=1, minSize=(120, 120))
+    faces = cascade.detectMultiScale(frame_gray, minNeighbors=1, minSize=(120, 120))
     # 如果检测到人脸
     if len(faces) > 0:
-        # for (x, y, w, h) in faces:
-        # TODO: 选择靠近中间的脸
-        x, y, w, h = faces[0]
-        distance = dis(frame_gray.shape, faces[0])
-        for xywh in faces:
-            curdis = dis(frame_gray.shape, xywh)
-            if curdis < distance:
-                x, y, w, h = xywh
-        return x,y,w,h
+        return max(faces, key=lambda x:x[2]*x[3])
     else:
         return None
 
@@ -132,8 +113,6 @@ def predict_expression():
     exp_model = load_model()
 
     capture = cv2.VideoCapture(0)  # 指定0号摄像头
-    if filename:
-        capture = cv2.VideoCapture(filename)
     
     return capture, exp_model
 

@@ -1,5 +1,7 @@
 from flask import Flask, render_template, jsonify
 from flask_cors import cross_origin, CORS
+import argparse
+import sys
 
 import json
 import random
@@ -18,10 +20,10 @@ def hello_world():
 @app.route('/data')
 @cross_origin()
 def get_data():
+    global args
     return jsonify({
-        'name':NAME,
-        # 'value':random.random()
-        'value': get_attention_score(capture, exp_model)
+        'name' : NAME,
+        'value': random.random() if args.useRand == 1 else get_attention_score(capture, exp_model)
     })
 
 @app.route('/camera')
@@ -30,4 +32,9 @@ def get_cam():
     return jsonify({'name':NAME,'value':base64.b64encode(get_user_photo(capture)).decode('utf-8')})
 
 if __name__ == '__main__':
+    global args
+    parser = argparse.ArgumentParser(description='simple flask backend')
+    parser.add_argument('--use-rand', type=int, help='use random value (0/1)', default=0, dest="useRand")
+    args = parser.parse_args()
+    print(args)
     app.run()

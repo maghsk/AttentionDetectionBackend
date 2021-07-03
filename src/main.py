@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, jsonify
 from flask_cors import cross_origin, CORS
 import argparse
 import sys
@@ -29,7 +29,10 @@ def get_data():
 @app.route('/camera')
 @cross_origin()
 def get_cam():
-    return jsonify({'name':NAME,'value':base64.b64encode(get_user_photo(capture)).decode('utf-8')})
+    return jsonify({
+        'name':NAME,
+        'value':base64.b64encode(get_user_photo(capture)).decode('utf-8')
+    })
 
 if __name__ == '__main__':
     global args
@@ -37,4 +40,10 @@ if __name__ == '__main__':
     parser.add_argument('--use-rand', type=int, help='use random value (0/1)', default=0, dest="useRand")
     args = parser.parse_args()
     print(args)
-    app.run()
+    app.run(
+        host='0.0.0.0',
+        port=5000,
+        #ssl_context=('cert.pem', 'key.pem')
+    )
+    #from waitress import serve
+    #serve(app, host='0.0.0.0', port=5000)
